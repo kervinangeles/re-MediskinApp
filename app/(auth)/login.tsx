@@ -1,50 +1,46 @@
 import React, { useState } from 'react';
-import { View, TextInput, Button, Text, StyleSheet, Alert } from 'react-native';
+import { View, TextInput, Button, Alert, StyleSheet } from 'react-native';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from './firebaseConfig';
+import { auth } from '../../firebaseConfig'; // adjust path to your config
+import { useRouter } from 'expo-router';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-const router = useRouter();
+  const router = useRouter();
 
   const handleLogin = async () => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      Alert.alert('Success', `Logged in as ${userCredential.user.email}`);
+      await signInWithEmailAndPassword(auth, email, password);
+      router.replace('/tabs'); // ✅ Redirect after successful login
     } catch (error) {
-      Alert.alert('Login Error', error.message);
+      Alert.alert('Login Failed', error.message);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Firebase Login</Text>
       <TextInput
-        style={styles.input}
         placeholder="Email"
-        onChangeText={setEmail}
         value={email}
+        onChangeText={setEmail}
+        style={styles.input}
         autoCapitalize="none"
       />
       <TextInput
-        style={styles.input}
         placeholder="Password"
-        onChangeText={setPassword}
         value={password}
+        onChangeText={setPassword}
+        style={styles.input}
         secureTextEntry
       />
       <Button title="Login" onPress={handleLogin} />
     </View>
   );
 }
-<TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
-  <Text style={styles.linkText}>Forgot Password?</Text>
-</TouchableOpacity>
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 20 },
-  title: { fontSize: 24, marginBottom: 20, textAlign: 'center' },
   input: {
     height: 50,
     borderColor: '#ccc',

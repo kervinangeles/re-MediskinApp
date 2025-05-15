@@ -1,10 +1,25 @@
-import { Image, StyleSheet, Text, TextInput, View, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import React, { useState } from 'react';
-import { colors } from '../utils/colors';
-import { FIREBASE_AUTH } from '../../FirebaseConfig';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack'; // Importing correct type for navigation
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import colors from '../../assets/utils/colors';
+import { FIREBASE_AUTH } from '../../FirebaseConfig';
 
-const LoginScreen = ({ navigation }) => {
+// Define the parameter list for your navigator
+type RootStackParamList = {
+  Home: undefined;
+  ForgotPassword: undefined;
+  Signup: undefined;
+  // Add other screens if needed
+};
+
+type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
+
+type Props = {
+  navigation: LoginScreenNavigationProp;
+};
+
+const LoginScreen = ({ navigation }: Props) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -17,8 +32,12 @@ const LoginScreen = ({ navigation }) => {
       await signInWithEmailAndPassword(auth, email, password);
       Alert.alert('Login Successful!', 'You have successfully logged in.');
       navigation.navigate('Home'); // Navigate to home after successful login
-    } catch (error) {
-      Alert.alert('Login Failed', error.message);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        Alert.alert('Login Failed', error.message);
+      } else {
+        Alert.alert('Login Failed', 'An unknown error occurred.');
+      }
     } finally {
       setLoading(false);
     }
@@ -26,9 +45,9 @@ const LoginScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Image source={require("../assets/images/logo.png")} style={styles.bannerImage} />
+      <Image source={require("../../assets/images/logo.png")} style={styles.bannerImage} />
       <View style={styles.formContainer}>
-        <Image source={require("../assets/images/avatar.png")} style={styles.avatarImage} />
+        <Image source={require("../../assets/images/avatar.png")} style={styles.avatarImage} />
         <Text style={styles.title}>LOGIN</Text>
         <TextInput
           value={email}

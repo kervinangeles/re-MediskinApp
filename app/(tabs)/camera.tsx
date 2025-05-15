@@ -1,136 +1,184 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { CameraType, CameraView, FlashMode, useCameraPermissions } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
-import React, { useRef, useState } from 'react';
 import {
-    Alert,
-    Image,
-    Modal,
-    SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  CameraType,
+  CameraView,
+  FlashMode,
+  useCameraPermissions,
+} from 'expo-camera';
+import * as FileSystem from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useRef, useState, useEffect } from 'react';
+import {
+  Alert,
+  Image,
+  Modal,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function CameraScreen() {
-  const [modalVisible, setModalVisible] = useState(false);
+  const isFocused = useIsFocused();
+  const [modalVisible, setModalVisible] = useState(true);
   const [cameraActive, setCameraActive] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<FlashMode>('off');
   const [photo, setPhoto] = useState<any>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<any>(null);
+  const [resultModalVisible, setResultModalVisible] = useState(false);
+  const [selectedResult, setSelectedResult] = useState<any>(null);
 
-  // Show modal whenever the screen comes into focus
-  useFocusEffect(
-    React.useCallback(() => {
+  useEffect(() => {
+    if (isFocused) {
       setModalVisible(true);
-      return () => {
-        // Cleanup when tab loses focus
-        if (!photo) {
-          setModalVisible(false);
-        }
-      };
-    }, [photo])
-  );
-
-  const handleCameraPress = async () => {
-    setModalVisible(false);
-    
-    // Request camera permissions if not already granted
-    if (!permission?.granted) {
-      const status = await requestPermission();
-      if (!status.granted) {
-        Alert.alert(
-          "Permission Required", 
-          "Camera permissions are needed to use this feature.",
-          [{ text: "OK" }]
-        );
-        return;
-      }
+      setCameraActive(false);
+      setPhoto(null);
+      setSelectedResult(null);
     }
-    
-    setCameraActive(true);
-  };
+  }, [isFocused]);
 
   const handleUploadPress = async () => {
     setModalVisible(false);
-    
-    // Request media library permissions
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
     if (status !== 'granted') {
-      Alert.alert(
-        "Permission Required", 
-        "Media Library access is needed to upload photos.",
-        [{ text: "OK" }]
-      );
+      Alert.alert('Permission Required', 'Media access is needed to upload photos.');
+      setModalVisible(true);
       return;
     }
-    
-    // Launch image picker
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
     });
-    
-    if (!result.canceled && result.assets && result.assets.length > 0) {
+
+    if (!result.canceled && result.assets?.length > 0) {
       setPhoto({ uri: result.assets[0].uri });
+    } else {
+      setPhoto(null);
+      setModalVisible(true);
     }
   };
 
-  const toggleCameraFacing = () => {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-  };
-
-  const toggleFlash = () => {
-    setFlash(current => (current === 'off' ? 'on' : 'off'));
+  const handleCameraPress = async () => {
+    setModalVisible(false);
+    if (!permission?.granted) {
+      const status = await requestPermission();
+      if (!status.granted) {
+        Alert.alert('Permission Required', 'Camera access is needed.');
+        setModalVisible(true);
+        return;
+      }
+    }
+    setCameraActive(true);
   };
 
   const takePicture = async () => {
     if (!cameraRef.current) return;
-    
     try {
-      const photo = await cameraRef.current.takePictureAsync();
-      setPhoto(photo);
+      const pic = await cameraRef.current.takePictureAsync();
+      setPhoto(pic);
       setCameraActive(false);
-    } catch (error) {
-      console.error('Failed to take picture:', error);
+    } catch (err) {
       Alert.alert('Error', 'Failed to take picture');
     }
   };
 
-  // Photo preview screen (after taking a photo)
+  const processImage = async () => {
+    try {
+      const base64 = await FileSystem.readAsStringAsync(photo.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const response = await fetch('https://model-api-ngyl.onrender.com/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([base64]),
+      });
+
+      const result = await response.json();
+
+      let name = '';
+      let severity = '';
+      let description = '';
+      const date = new Date().toISOString().split('T')[0];
+
+      switch (result.result) {
+        case 'Normal Skin':
+          name = 'Healthy Skin';
+          severity = 'No severity';
+          description = 'Skin appears to be healthy and normal.';
+          break;
+        case 'Bruises':
+          name = 'Bruise';
+          severity = 'Normal Wound';
+          description = 'A bruise detected; mild and manageable.';
+          break;
+        case 'Abrasions':
+        case 'Cuts':
+          name = result.result === 'Abrasions' ? 'Abrasion' : 'Cut';
+          severity = 'Moderate Wound';
+          description = `Detected ${name.toLowerCase()} with moderate severity.`;
+          break;
+        case 'Diabetic Wounds':
+          name = 'Diabetic Wound';
+          severity = 'Dangerous Wound';
+          description = 'A diabetic wound detected; needs immediate care.';
+          break;
+        default:
+          name = result.result;
+          severity = 'Unknown';
+          description = 'No detailed description available.';
+      }
+
+      const newEntry = {
+        id: Date.now().toString(), // unique ID added here
+        uri: photo.uri,
+        name,
+        severity,
+        description,
+        date,
+      };
+
+      // Save to local history
+      const history = await AsyncStorage.getItem('scan_history');
+      const parsedHistory = history ? JSON.parse(history) : [];
+      parsedHistory.push(newEntry);
+      await AsyncStorage.setItem('scan_history', JSON.stringify(parsedHistory));
+
+      setSelectedResult(newEntry);
+      setResultModalVisible(true);
+    } catch (error) {
+      Alert.alert('Error', 'Prediction failed');
+    } finally {
+      setPhoto(null);
+    }
+  };
+
   if (photo) {
     return (
       <View style={styles.previewContainer}>
-        <Image
-          source={{ uri: photo.uri }}
-          style={styles.previewImage}
-        />
+        <Image source={{ uri: photo.uri }} style={styles.previewImage} />
         <View style={styles.previewControls}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.previewButton}
             onPress={() => {
               setPhoto(null);
+              setSelectedResult(null);
               setModalVisible(true);
             }}
           >
             <Text style={styles.previewButtonText}>Discard</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.previewButton, styles.previewSaveButton]}
-            onPress={() => {
-              Alert.alert('Photo Selected', 'Processing your image...');
-              // Here you would implement the actual processing or uploading logic
-              setPhoto(null);
-              setModalVisible(true);
-            }}
+          <TouchableOpacity
+            style={[styles.previewButton, styles.useButton]}
+            onPress={processImage}
           >
             <Text style={styles.previewButtonText}>Use Photo</Text>
           </TouchableOpacity>
@@ -139,63 +187,31 @@ export default function CameraScreen() {
     );
   }
 
-  // Camera view when active
   if (cameraActive) {
-    if (!permission?.granted) {
-      return (
-        <View style={styles.container}>
-          <Text style={styles.message}>We need your permission to show the camera</Text>
-          <TouchableOpacity style={styles.actionButton} onPress={requestPermission}>
-            <Text style={styles.actionButtonText}>Grant Permission</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={() => setModalVisible(true)}>
-            <Text style={styles.actionButtonText}>Back</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
     return (
       <SafeAreaView style={styles.cameraContainer}>
         <StatusBar barStyle="light-content" />
-        <CameraView
-          ref={cameraRef}
-          style={styles.camera}
-          facing={facing}
-          flash={flash}
-        >
+        <CameraView ref={cameraRef} style={styles.camera} facing={facing} flash={flash}>
           <View style={styles.buttonContainer}>
-            <TouchableOpacity 
-              style={styles.button} 
+            <TouchableOpacity
+              style={styles.button}
               onPress={() => {
                 setCameraActive(false);
                 setModalVisible(true);
+                setPhoto(null);
+                cameraRef.current = null;
               }}
             >
               <Text style={styles.text}>Back</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              onPress={takePicture} 
-              style={styles.captureButton}
-            >
+            <TouchableOpacity onPress={takePicture} style={styles.captureButton}>
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.button} 
-              onPress={toggleCameraFacing}
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => setFacing(f => (f === 'back' ? 'front' : 'back'))}
             >
               <Text style={styles.text}>Flip</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.flashButton}
-              onPress={toggleFlash}
-            >
-              <Text style={styles.text}>
-                {flash === 'off' ? '⚡ Off' : '⚡ On'}
-              </Text>
             </TouchableOpacity>
           </View>
         </CameraView>
@@ -203,227 +219,166 @@ export default function CameraScreen() {
     );
   }
 
-  // Default view with modal - removed the button to show modal since it now shows automatically
   return (
     <View style={styles.container}>
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
+      <Modal animationType="slide" transparent visible={modalVisible}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Take a photo of your skin</Text>
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={handleCameraPress}
-            >
+            <Text style={styles.modalTitle}>Take or upload a photo</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={handleCameraPress}>
               <Text style={styles.modalButtonText}>Camera</Text>
             </TouchableOpacity>
-            <View style={styles.divider} />
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={handleUploadPress}
-            >
+            <TouchableOpacity style={styles.modalButton} onPress={handleUploadPress}>
               <Text style={styles.modalButtonText}>Upload Photo</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalButton, styles.cancelButton]}
-              onPress={() => setModalVisible(false)}
+              onPress={() => {
+                setModalVisible(false);
+                setPhoto(null);
+              }}
             >
-              <Text style={[styles.modalButtonText, styles.cancelButtonText]}>
-                Cancel
-              </Text>
+              <Text style={[styles.modalButtonText, styles.cancelText]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-      
-      {/* Optional empty state message when modal is closed but no actions taken */}
-      {!modalVisible && (
-        <View style={styles.emptyStateContainer}>
-          <Text style={styles.emptyStateText}>
-            Tap the camera tab again to take or upload a photo
-          </Text>
-        </View>
-      )}
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={resultModalVisible}
+        onRequestClose={() => {
+          setResultModalVisible(false);
+          setSelectedResult(null);
+          setModalVisible(true);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.resultModal}>
+            <Text style={styles.resultTitle}>{selectedResult?.name}</Text>
+            <View style={styles.resultImageBox}>
+              <Image source={{ uri: selectedResult?.uri }} style={{ width: 100, height: 100 }} />
+            </View>
+            <Text style={styles.resultText}>
+              <Text style={{ fontWeight: 'bold' }}>Date Scanned:</Text> {selectedResult?.date}
+            </Text>
+            <Text style={styles.resultText}>
+              <Text style={{ fontWeight: 'bold' }}>Severity:</Text>{' '}
+              <Text
+                style={{
+                  backgroundColor:
+                    selectedResult?.severity === 'Moderate Wound'
+                      ? '#FFA500'
+                      : selectedResult?.severity === 'Dangerous Wound'
+                      ? '#FF6347'
+                      : '#ccc',
+                  paddingHorizontal: 8,
+                  borderRadius: 4,
+                  color: '#fff',
+                }}
+              >
+                {selectedResult?.severity}
+              </Text>
+            </Text>
+            <Text style={styles.resultText}>
+              <Text style={{ fontWeight: 'bold' }}>Description:</Text> {selectedResult?.description}
+</Text>
+
+        <TouchableOpacity
+          style={styles.modalButton}
+          onPress={() => {
+            setResultModalVisible(false);
+            setSelectedResult(null);
+            setModalVisible(true);
+          }}
+        >
+          <Text style={styles.modalButtonText}>Close</Text>
+        </TouchableOpacity>
+      </View>
     </View>
-  );
+  </Modal>
+</View>
+
+);
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  message: {
-    textAlign: 'center',
-    paddingBottom: 10,
-    fontSize: 16,
-  },
-  actionButton: {
-    backgroundColor: '#2196F3',
-    padding: 15,
-    borderRadius: 5,
-    margin: 10,
-  },
-  actionButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  emptyStateContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyStateText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#888',
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    width: '80%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 20,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#333',
-  },
-  modalButton: {
-    width: '100%',
-    paddingVertical: 15,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#005EB8',
-  },
-  cancelButton: {
-    backgroundColor: '#FF3B30',
-    borderRadius: 5,
-    marginTop: 10,
-  },
-  cancelButtonText: {
-    color: '#FFFFFF',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    width: '100%',
-    marginVertical: 5,
-  },
-  // Camera styles - unchanged
-  cameraContainer: {
-    flex: 1,
-    backgroundColor: 'black',
-  },
-  camera: {
-    flex: 1,
-  },
+  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
+  modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#00000099' },
+  modalContent: { backgroundColor: '#fff', padding: 20, borderRadius: 10, width: '80%', alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20 },
+  modalButton: { paddingVertical: 12 },
+  modalButtonText: { fontSize: 16, color: '#005EB8' },
+  cancelButton: { marginTop: 10 },
+  cancelText: { color: 'red' },
+  historyHeader: { fontSize: 20, fontWeight: 'bold', marginVertical: 10 },
+  card: { flexDirection: 'row', backgroundColor: '#f9f9f9', borderRadius: 10, padding: 10, marginBottom: 10 },
+  thumb: { width: 60, height: 60, borderRadius: 10, marginRight: 10 },
+  details: { flex: 1 },
+  name: { fontWeight: 'bold' },
+  severity: { color: '#c43' },
+  date: { fontSize: 12, color: '#888' },
+  empty: { textAlign: 'center', color: '#999', marginTop: 20 },
+  previewContainer: { flex: 1, backgroundColor: '#000' },
+  previewImage: { flex: 1, resizeMode: 'contain' },
+  previewControls: { flexDirection: 'row', justifyContent: 'space-around', padding: 20, backgroundColor: 'rgba(0,0,0,0.6)' },
+  previewButton: { padding: 15, borderRadius: 8, backgroundColor: '#666', width: '45%', alignItems: 'center' },
+  useButton: { backgroundColor: '#005EB8' },
+  previewButtonText: { color: '#fff', fontWeight: 'bold' },
+  cameraContainer: { flex: 1, backgroundColor: '#000' },
+  camera: { flex: 1 },
   buttonContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: 'transparent',
-    margin: 20,
-    position: 'absolute',
-    bottom: 20,
-    left: 0,
-    right: 0,
-    justifyContent: 'space-around',
-    alignItems: 'center',
+    position: 'absolute', bottom: 20, left: 0, right: 0,
+    flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center',
   },
   button: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 50,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     padding: 10,
-    width: 70,
-    height: 50,
-    justifyContent: 'center',
+    borderRadius: 10,
   },
+  text: { color: '#fff', fontWeight: 'bold' },
   captureButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    borderWidth: 5,
-    borderColor: '#FFF',
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 70, height: 70, borderRadius: 35, borderWidth: 4, borderColor: '#fff',
+    justifyContent: 'center', alignItems: 'center',
   },
   captureButtonInner: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#FFF',
+    width: 50, height: 50, borderRadius: 25, backgroundColor: '#fff',
   },
-  flashButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 50,
-    padding: 10,
-    width: 80,
-    height: 50,
-    justifyContent: 'center',
-  },
-  text: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  // Preview screen styles - unchanged
-  previewContainer: {
-    flex: 1,
-    backgroundColor: 'black',
-  },
-  previewImage: {
-    flex: 1,
-    resizeMode: 'contain',
-  },
-  previewControls: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  resultModal: {
+    backgroundColor: '#fff',
     padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  previewButton: {
-    padding: 15,
-    borderRadius: 8,
-    backgroundColor: '#666',
-    width: '45%',
+    borderRadius: 12,
+    width: '85%',
     alignItems: 'center',
+    elevation: 5,
   },
-  previewSaveButton: {
-    backgroundColor: '#005EB8',
-  },
-  previewButtonText: {
-    color: 'white',
-    fontSize: 16,
+  resultTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  resultImageBox: {
+    backgroundColor: '#e6f0ff',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  resultText: {
+    fontSize: 14,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  resultCloseButton: {
+    marginTop: 15,
+    backgroundColor: '#005EB8',
+    paddingVertical: 10,
+    paddingHorizontal: 25,
+    borderRadius: 8,
+  },
+  resultCloseButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });

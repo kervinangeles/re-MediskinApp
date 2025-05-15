@@ -1,10 +1,23 @@
-import { Image, StyleSheet, Text, TextInput, View, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import React, { useState } from 'react';
-import { colors } from '../utils/colors';
-import { FIREBASE_AUTH } from '../../FirebaseConfig';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack'; // Importing correct type for navigation
 import { sendPasswordResetEmail } from 'firebase/auth';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import colors from '../../assets/utils/colors';
+import { FIREBASE_AUTH } from '../../FirebaseConfig';
 
-const ForgotPassword = ({ navigation }) => {
+// Define the parameter list for your navigator
+type RootStackParamList = {
+  ForgotPassword: undefined;
+  // Add other screens if needed
+};
+
+type ForgotPasswordScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'ForgotPassword'>;
+
+type Props = {
+  navigation: ForgotPasswordScreenNavigationProp;
+};
+
+const ForgotPassword = ({ navigation }: Props) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   
@@ -19,8 +32,14 @@ const ForgotPassword = ({ navigation }) => {
       await sendPasswordResetEmail(FIREBASE_AUTH, email);
       Alert.alert('Success', 'Check your email for password reset instructions.');
       navigation.goBack(); // Navigate back to LoginScreen
-    } catch (error) {
-      Alert.alert('Reset Failed', error.message);
+    } catch (error: unknown) { // Explicitly typing error
+      if (error instanceof Error) {
+        // If the error is an instance of Error, it has a message
+        Alert.alert('Reset Failed', error.message);
+      } else {
+        // Handle the case when the error is not an instance of Error
+        Alert.alert('Reset Failed', 'An unknown error occurred.');
+      }
     } finally {
       setLoading(false);
     }
@@ -28,7 +47,7 @@ const ForgotPassword = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Image source={require("../assets/images/logo.png")} style={styles.bannerImage} />
+      <Image source={require("../../assets/images/logo.png")} style={styles.bannerImage} />
       <View style={styles.formContainer}>
         <Text style={styles.title}>FORGOT PASSWORD</Text>
         <Text style={styles.subtitle}>Enter your email, and we'll send you a reset link.</Text>

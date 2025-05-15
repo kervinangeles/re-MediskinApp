@@ -1,177 +1,180 @@
-import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
-// Enhanced history item type with severity information
-interface HistoryItem {
-  id: string;
-  disease: string;
-  date: string;
-  severity: 'Low' | 'Medium' | 'High';
-  imageUrl?: string; // Optional URL for actual image
-}
-
-const historyData: HistoryItem[] = [
-  { id: '1', disease: 'Dermatitis', date: '12 May 2023', severity: 'Medium' },
-  { id: '2', disease: 'Eczema', date: '5 April 2023', severity: 'Low' },
-  { id: '3', disease: 'Psoriasis', date: '28 March 2023', severity: 'High' },
-  { id: '4', disease: 'Contact Rash', date: '15 February 2023', severity: 'Medium' },
-];
+import {
+  Alert,
+  FlatList,
+  Image,
+  Modal,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function History() {
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [selected, setSelected] = useState<any>(null);
 
-  const openModal = (item: HistoryItem) => {
-    setSelectedItem(item);
-    setModalVisible(true);
-  };
-
-  const closeModal = () => {
-    setModalVisible(false);
-    setSelectedItem(null);
-  };
-
-  // Get severity color based on severity level
-  const getSeverityColor = (severity: string) => {
-    switch(severity) {
-      case 'Low': return '#4CD964'; // Green
-      case 'Medium': return '#FF9500'; // Orange
-      case 'High': return '#FF3B30'; // Red
-      default: return '#8E8E93'; // Gray for unknown
+  const loadHistory = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('scan_history');
+      if (stored) setHistory(JSON.parse(stored));
+      else setHistory([]);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load history');
     }
   };
 
-  const renderItem = ({ item }: { item: HistoryItem }) => (
-    <View style={styles.card}>
-      <View style={styles.cardContent}>
-        {/* Make image container touchable to open modal */}
-        <TouchableOpacity 
-          style={styles.imageContainer}
-          onPress={() => openModal(item)}
-        >
-          <Ionicons name="image-outline" size={36} color="#005EB8" />
-        </TouchableOpacity>
-        <View style={styles.textContainer}>
-          <Text style={styles.diseaseText}>{item.disease}</Text>
-          <Text style={styles.dateText}>{item.date}</Text>
-        </View>
-      </View>
-      <TouchableOpacity 
-        style={styles.deleteButton}
-        onPress={() => console.log(`Delete item ${item.id}`)}  
-      >
-        <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-      </TouchableOpacity>
-    </View>
+  useFocusEffect(
+    React.useCallback(() => {
+      loadHistory();
+    }, [])
   );
+
+  const deleteEntry = (id: string) => {
+    Alert.alert('Delete Entry', 'Are you sure you want to delete this entry?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const filtered = history.filter(item => item.id !== id);
+          setHistory(filtered);
+          await AsyncStorage.setItem('scan_history', JSON.stringify(filtered));
+          if (selected?.id === id) setSelected(null);
+        },
+      },
+    ]);
+  };
+
+  const renderItem = ({ item }: { item: any }) => (
+  <View style={styles.card}>
+    <TouchableOpacity style={styles.cardContent} onPress={() => setSelected(item)}>
+      <View style={styles.imageContainer}>
+        <Image source={{ uri: item.uri }} style={{ width: 40, height: 40, borderRadius: 8 }} />
+      </View>
+      <View style={styles.textContainer}>
+        {/* Wound Name */}
+        <Text style={styles.woundNameText}>{item.name || 'Unnamed Wound'}</Text>
+        {/* Replaced 'disease' with 'description' */}
+        <Text style={styles.diseaseText}>{item.description}</Text>
+        <Text style={styles.dateText}>{item.date}</Text>
+      </View>
+    </TouchableOpacity>
+
+    <TouchableOpacity onPress={() => deleteEntry(item.id)} style={styles.deleteButton}>
+      <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 20 }}>🗑️</Text>
+    </TouchableOpacity>
+  </View>
+);
+
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>History</Text>
+      <View style={styles.titleWrapper}>
+  <Text style={styles.title}>Scan History</Text>
+</View>
       <FlatList
-        data={historyData}
-        keyExtractor={(item) => item.id}
+        data={history}
+        keyExtractor={(item, index) => (item.id ? item.id.toString() : index.toString())}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContainer}
+        contentContainerStyle={{ paddingBottom: 80 }}
+        ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 40 }}>No history found.</Text>}
       />
 
-      {/* Modal for image preview and details */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={closeModal}
-      >
+      <Modal visible={!!selected} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedItem?.disease}</Text>
-              <TouchableOpacity onPress={closeModal}>
-                <Ionicons name="close" size={24} color="#333333" />
-              </TouchableOpacity>
-            </View>
-            
+            <Text style={styles.modalTitle}>{selected?.disease}</Text>
             <View style={styles.imagePreviewContainer}>
-              {/* Replace with actual Image component when you have real images */}
-              <View style={styles.imagePlaceholder}>
-                <Ionicons name="image" size={80} color="#005EB8" />
-              </View>
+              <Image source={{ uri: selected?.uri }} style={{ width: 200, height: 200, borderRadius: 15 }} />
             </View>
-            
             <View style={styles.detailsContainer}>
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Date Scanned:</Text>
-                <Text style={styles.detailValue}>{selectedItem?.date}</Text>
-              </View>
-              
-              <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Severity:</Text>
-                <View style={[
-                  styles.severityBadge, 
-                  { backgroundColor: getSeverityColor(selectedItem?.severity || '') }
-                ]}>
-                  <Text style={styles.severityText}>{selectedItem?.severity}</Text>
+                <View
+                  style={[
+                    styles.severityBadge,
+                    selected?.severity === 'High'
+                      ? { backgroundColor: '#FF3B30' }
+                      : selected?.severity === 'Medium'
+                      ? { backgroundColor: '#FF9500' }
+                      : { backgroundColor: '#34C759' },
+                  ]}
+                >
+                  <Text style={styles.severityText}>{selected?.severity}</Text>
                 </View>
               </View>
-              
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Date:</Text>
+                <Text style={styles.detailValue}>{selected?.date}</Text>
+              </View>
               <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Description</Text>
-                <Text style={styles.detailDescription}>
-                  This appears to be {selectedItem?.disease} with {selectedItem?.severity.toLowerCase()} severity. 
-                  The condition was scanned on {selectedItem?.date}. Regular monitoring is recommended.
-                </Text>
+                <Text style={styles.detailSectionTitle}>Description:</Text>
+                <Text style={styles.detailDescription}>{selected?.description}</Text>
+              </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Wound Name:</Text>
+                <Text style={styles.detailDescription}>{selected?.name || 'Unnamed Wound'}</Text>
               </View>
             </View>
-
-            <TouchableOpacity 
-              style={styles.closeModalButton}
-              onPress={closeModal}
-            >
+            <TouchableOpacity style={styles.closeModalButton} onPress={() => setSelected(null)}>
               <Text style={styles.closeModalButtonText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#F5F9FC', 
-    padding: 16 
+  container: {
+    flex: 1,
+    backgroundColor: '#F5F9FC',
+    padding: 16,
   },
-  title: { 
-    fontSize: 24, 
-    fontWeight: 'bold', 
-    color: '#005EB8', 
-    marginBottom: 16 
+  titleWrapper: {
+    backgroundColor: '#F5F9FC',
+    paddingVertical: 10,
+    marginBottom: 10,
+    alignItems: 'center',
+    borderRadius: 5,
   },
-  listContainer: { 
-    paddingBottom: 16 
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#005EB8',
+    marginBottom: 16,
+    paddingTop: 10,
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 1,
+    alignSelf: 'center',
+    zIndex: 10,
+    paddingHorizontal: 8,
+    borderRadius: 5,
   },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#87CEEB',
     borderRadius: 10,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginBottom: 16,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
-    elevation: 2,
   },
-  cardContent: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    flex: 1 
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   imageContainer: {
     width: 50,
@@ -182,30 +185,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
   },
-  textContainer: { 
-    flex: 1 
+  textContainer: {
+    flex: 1,
   },
-  diseaseText: { 
-    fontSize: 16, 
-    fontWeight: 'bold', 
-    color: '#FFFFFF' 
+  woundNameText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  dateText: { 
-    fontSize: 14, 
-    color: '#FFFFFF', 
-    marginTop: 4 
+  diseaseText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginTop: 2,
+  },
+  dateText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    marginTop: 2,
   },
   deleteButton: {
     backgroundColor: '#FF3B30',
-    borderRadius: 10,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     marginLeft: 10,
-    alignSelf: 'center',
   },
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -225,31 +232,16 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-  },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#005EB8',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   imagePreviewContainer: {
     alignItems: 'center',
     marginBottom: 20,
-  },
-  imagePlaceholder: {
-    width: 200,
-    height: 200,
-    backgroundColor: '#E0F0FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 10,
   },
   detailsContainer: {
     marginBottom: 20,
@@ -268,6 +260,7 @@ const styles = StyleSheet.create({
   detailValue: {
     fontSize: 16,
     color: '#555555',
+    flexShrink: 1,
   },
   severityBadge: {
     paddingHorizontal: 12,
@@ -298,7 +291,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 10,
   },
   closeModalButtonText: {
     color: '#FFFFFF',
@@ -306,3 +298,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+

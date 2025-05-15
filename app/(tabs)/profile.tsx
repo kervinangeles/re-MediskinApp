@@ -1,200 +1,182 @@
-import { FontAwesome } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FontAwesome } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native'; // <-- Import this
 
-// Sample user data (replace with actual user data from your app)
-const userData = {
-  fullname: 'Fullname',
-  age: 'Age',
-  gender: 'Gender',
-  stats: {
-    photosUploaded: 0,
-    withoutProblems: 0,
-    diagnosedProblems: 0
-  },
-  lastScans: [
-    { id: '1', date: 'Date', disease: 'Dermatitis', severity: 'Medium' },
-    { id: '2', date: 'Date', disease: 'Eczema', severity: 'Low' }
-  ]
+type Scan = {
+  id?: string;
+  date: string;
+  disease: string;
+  name?: string;       
+  uri: string;
+  severity?: string;
 };
 
 export default function Profile() {
-  const router = useRouter();
+  const [history, setHistory] = useState<Scan[]>([]);
+  const [healthyCount, setHealthyCount] = useState(0);
+  const [diagnosedCount, setDiagnosedCount] = useState(0);
+  const [lastScan, setLastScan] = useState<Scan | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [selectedScan, setSelectedScan] = useState<typeof userData.lastScans[0] | null>(null);
-  const [pressedIndex, setPressedIndex] = useState<number | null>(null);
 
-  const navigateToHistory = () => {
-    // Navigate to the history tab
-    router.push('/history');
-  };
+  const isFocused = useIsFocused();  // <-- Hook to detect screen focus
 
-  const openScanModal = (scan: typeof userData.lastScans[0], index: number) => {
-    setPressedIndex(index);
-    setSelectedScan(scan);
-    setModalVisible(true);
-    
-    // Reset pressed state after a short delay for animation
-    setTimeout(() => {
-      setPressedIndex(null);
-    }, 300);
-  };
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('scan_history');
+        if (stored) {
+          const parsed: Scan[] = JSON.parse(stored);
+          setHistory(parsed);
 
-  const closeScanModal = () => {
-    setModalVisible(false);
-    setSelectedScan(null);
-  };
+          // Set the latest scan
+          const sorted = [...parsed].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          setLastScan(sorted[0] || null);
+        } else {
+          setHistory([]);
+          setLastScan(null);
+        }
+      } catch (error) {
+        Alert.alert('Error', 'Failed to load scan history.');
+      }
+    };
 
-  // Get severity color based on severity level
-  const getSeverityColor = (severity: string) => {
-    switch(severity) {
-      case 'Low': return '#4CD964'; // Green
-      case 'Medium': return '#FF9500'; // Orange
-      case 'High': return '#FF3B30'; // Red
-      default: return '#8E8E93'; // Gray for unknown
+    if (isFocused) {
+      loadHistory(); // reload when screen is focused
     }
-  };
+  }, [isFocused]); // re-run when focus changes
+
+  // Count updates whenever history changes
+  useEffect(() => {
+    let healthy = 0;
+    let diagnosed = 0;
+
+    history.forEach(({ name}) => {
+      const lowerName = name?.toLowerCase().trim() || '';
+      if (lowerName.includes('healthy') || lowerName.includes('normal')) {
+        healthy++;
+      } else {
+        diagnosed++;
+      }
+    });
+
+    setHealthyCount(healthy);
+    setDiagnosedCount(diagnosed);
+  }, [history]);
+
+  const lastTwoScans = [...history]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 2);
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Section */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.avatarContainer}>
           <FontAwesome name="user-circle" size={60} color="#fff" />
         </View>
-        <Text style={styles.headerText}>USERS PROFILE</Text>
+        <Text style={styles.headerText}>USER'S PROFILE</Text>
         <View style={styles.userInfoContainer}>
-          <Text style={styles.infoText}>{userData.fullname}</Text>
-          <Text style={styles.infoText}>{userData.age}</Text>
-          <Text style={styles.infoText}>{userData.gender}</Text>
+          <Text style={styles.infoText}>Fullname: John Doe</Text>
+          <Text style={styles.infoText}>Age: 29</Text>
+          <Text style={styles.infoText}>Gender: Male</Text>
         </View>
       </View>
 
-      {/* Stats Section */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statBox}>
-          <Text style={styles.statText}>Photos{"\n"}Uploaded</Text>
-          <Text style={styles.statValue}>{userData.stats.photosUploaded}</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.statBox}>
-          <Text style={styles.statText}>Without{"\n"}Problems</Text>
-          <Text style={styles.statValue}>{userData.stats.withoutProblems}</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.statBox}>
-          <Text style={styles.statText}>Diagnosed{"\n"}Problems</Text>
-          <Text style={styles.statValue}>{userData.stats.diagnosedProblems}</Text>
-        </View>
-      </View>
+      {/* Stats */}
+<View style={styles.statsRow}>
+  <View style={styles.statBox}>
+    <Text style={styles.stat}>Total Scans</Text>
+    <Text style={styles.statNumber}>{history.length}</Text>
+  </View>
+  <View style={styles.statBox}>
+    <Text style={styles.stat}>Healthy</Text>
+    <Text style={styles.statNumber}>{healthyCount}</Text>
+  </View>
+  <View style={styles.statBox}>
+    <Text style={styles.stat}>Diagnosed</Text>
+    <Text style={styles.statNumber}>{diagnosedCount}</Text>
+  </View>
+</View>
 
-      {/* Last Scanning Section with enhanced header */}
-      <View style={styles.sectionBackground}>
-        <TouchableOpacity 
-          style={styles.lastScanningHeader}
-          activeOpacity={0.7}
-          onPress={navigateToHistory}
-        >
-          <Text style={styles.sectionTitle}>Your Last Scanning</Text>
-          <FontAwesome name="angle-right" size={16} color="#0066CC" />
-        </TouchableOpacity>
-        
-        <View style={styles.scanningImagesContainer}>
-          {userData.lastScans.map((scan, index) => (
-            <View key={index} style={styles.scanItem}>
-              <TouchableOpacity 
-                style={[
-                  styles.imageBox,
-                  pressedIndex === index && styles.imageBoxPressed
-                ]}
-                activeOpacity={0.7}
-                onPress={() => openScanModal(scan, index)}
-              >
-                <View style={styles.imageInnerShadow}>
-                  <FontAwesome name="image" size={40} color="#0066CC" />
-                </View>
-              </TouchableOpacity>
-              <Text style={styles.imageDate}>{scan.date}</Text>
-            </View>
+      {/* Last Scans */}
+      <Text style={styles.lastScanTitle}>Last Scans</Text>
+      {lastTwoScans.length > 0 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.lastScansRow}>
+          {lastTwoScans.map((scan) => (
+            <TouchableOpacity
+              key={scan.id || scan.date}
+              style={styles.lastScanBox}
+              onPress={() => {
+                setLastScan(scan);
+                setModalVisible(true);
+              }}
+            >
+              <Image source={{ uri: scan.uri }} style={styles.lastImage} />
+              <View>
+                <Text style={styles.disease}>{scan.disease}</Text>
+                <Text style={styles.date}>{scan.date}</Text>
+              </View>
+            </TouchableOpacity>
           ))}
-        </View>
-      </View>
+        </ScrollView>
+      ) : (
+        <Text style={{ textAlign: 'center', marginTop: 20 }}>No scan found</Text>
+      )}
 
-      {/* Modal for scan preview */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={closeScanModal}
-      >
+      {/* Modal */}
+      <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedScan?.disease || "Scan Details"}</Text>
-              <TouchableOpacity onPress={closeScanModal}>
-                <FontAwesome name="close" size={24} color="#333333" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.imagePreviewContainer}>
-              {/* Replace with actual Image component when you have real images */}
-              <View style={styles.imagePlaceholder}>
-                <FontAwesome name="image" size={80} color="#0066CC" />
-              </View>
-            </View>
-            
-            <View style={styles.detailsContainer}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Date Scanned:</Text>
-                <Text style={styles.detailValue}>{selectedScan?.date}</Text>
-              </View>
-              
-              {selectedScan?.severity && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Severity:</Text>
-                  <View style={[
-                    styles.severityBadge, 
-                    { backgroundColor: getSeverityColor(selectedScan?.severity || '') }
-                  ]}>
-                    <Text style={styles.severityText}>{selectedScan?.severity}</Text>
-                  </View>
-                </View>
-              )}
-              
-              <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Description</Text>
-                <Text style={styles.detailDescription}>
-                  This appears to be {selectedScan?.disease} with {selectedScan?.severity?.toLowerCase()} severity. 
-                  The condition was scanned on {selectedScan?.date}. Regular monitoring is recommended.
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.closeModalButton}
-              onPress={closeScanModal}
+            <TouchableOpacity
+              onPress={() => setModalVisible(false)}
+              style={{ alignSelf: 'flex-end' }}
             >
-              <Text style={styles.closeModalButtonText}>Close</Text>
+              <FontAwesome name="close" size={24} color="gray" />
             </TouchableOpacity>
+
+            {lastScan && (
+              <>
+                <Image source={{ uri: lastScan.uri }} style={styles.modalImage} />
+                <Text style={styles.modalDisease}>{lastScan.disease}</Text>
+                <Text style={styles.modalDate}>Date: {lastScan.date}</Text>
+                {lastScan.severity && (
+                  <Text style={styles.modalSeverity}>Severity: {lastScan.severity}</Text>
+                )}
+              </>
+            )}
           </View>
         </View>
       </Modal>
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f0f0f0' 
+  container: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
   },
+
+  // Header
   header: {
     backgroundColor: '#5B9BD5',
-    padding: 15,
-    paddingTop: 20,
+    paddingTop: 30,
     paddingBottom: 20,
+    paddingHorizontal: 15,
+    alignItems: 'center',
   },
   avatarContainer: {
     width: 70,
@@ -203,116 +185,103 @@ const styles = StyleSheet.create({
     backgroundColor: '#3672B6',
     justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'center',
-    marginBottom: 5,
+    marginBottom: 8,
   },
-  headerText: { 
-    fontSize: 16, 
-    fontWeight: 'bold', 
+  headerText: {
+    fontSize: 16,
+    fontWeight: 'bold',
     color: '#FFFFFF',
     textAlign: 'center',
-    marginBottom: 5,
   },
   userInfoContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 5,
-    padding: 10,
+    borderRadius: 8,
+    paddingVertical: 12,
+    marginTop: 10,
+    marginHorizontal: 15,
+    width: '100%',
+    alignItems: 'flex-start',
+    paddingHorizontal: 10,
   },
-  infoText: { 
-    fontSize: 14, 
-    color: '#FFFFFF', 
-    marginBottom: 2 
+  infoText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    marginBottom: 3,
   },
-  statsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  statBox: { 
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingVertical: 15,
-  },
-  statText: { 
-    fontSize: 14, 
-    color: '#0066CC', 
-    marginBottom: 5,
+
+  // Stats
+statsRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-around',
+  marginVertical: 10,
+},
+
+statBox: {
+  backgroundColor: '#5B9BD5',
+  paddingVertical: 15,
+  paddingHorizontal: 20,
+  borderRadius: 12,
+  alignItems: 'center',
+  minWidth: 100,
+  elevation: 3, // subtle shadow on Android
+  shadowColor: '#000', // shadow for iOS
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.25,
+  shadowRadius: 3,
+},
+
+stat: {
+  fontSize: 14,
+  color: '#FFFFFF',
+  fontWeight: '600',
+},
+
+statNumber: {
+  fontSize: 22,
+  fontWeight: 'bold',
+  color: '#FFFFFF',
+  marginTop: 4,
+},
+
+  // Last Scan Section
+  lastScanTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 10,
     textAlign: 'center',
   },
-  statValue: { 
-    fontSize: 18, 
-    fontWeight: 'bold', 
-    color: '#0066CC' 
-  },
-  divider: {
-    width: 1,
-    height: '100%',
-    backgroundColor: '#e0e0e0',
-  },
-  // Enhanced styling for Last Scanning section
-  sectionBackground: {
-    backgroundColor: 'rgba(216, 237, 255, 0.3)',
-    marginTop: 10,
-    paddingBottom: 15,
-  },
-  lastScanningHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  lastScansRow: {
     paddingHorizontal: 15,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(216, 237, 255, 0.6)',
+   maxHeight: 80,
   },
-  sectionTitle: { 
-    fontSize: 16, 
-    color: '#0066CC',
-    fontWeight: '500',
-  },
-  scanningImagesContainer: {
+  lastScanBox: {
+    width: 180,
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 10,
-    paddingTop: 10,
-  },
-  scanItem: {
+    padding: 10,
+    marginRight: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    borderColor: '#ccc',
     alignItems: 'center',
+    backgroundColor: '#fff',
   },
-  imageBox: {
-    width: 80,
-    height: 80,
-    borderWidth: 2,
-    borderColor: '#0066CC',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    padding: 2,
+  lastImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    marginRight: 10,
   },
-  imageInnerShadow: {
-    flex: 1,
-    width: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 5,
-    backgroundColor: '#F5FAFF',
+  disease: {
+    fontSize: 14,
+    fontWeight: '600',
   },
-  imageBoxPressed: {
-    backgroundColor: '#E0F0FF',
-    transform: [{ scale: 0.96 }],
+  date: {
+    fontSize: 12,
+    color: '#666',
   },
-  imageDate: { 
-    fontSize: 14, 
-    color: '#0066CC',
-  },
-  // Modal styles
+
+  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -326,92 +295,31 @@ const styles = StyleSheet.create({
     width: '100%',
     maxHeight: '80%',
     padding: 20,
+    elevation: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 4,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+  modalImage: {
+    width: '100%',
+    height: 200,
+    resizeMode: 'contain',
+    marginBottom: 15,
   },
-  modalTitle: {
+  modalDisease: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#0066CC',
+    marginBottom: 5,
   },
-  imagePreviewContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  imagePlaceholder: {
-    width: 200,
-    height: 200,
-    backgroundColor: '#E0F0FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#0066CC',
-  },
-  detailsContainer: {
-    marginBottom: 20,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  detailLabel: {
+  modalDate: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-    width: 110,
+    color: '#888',
+    marginBottom: 5,
   },
-  detailValue: {
+  modalSeverity: {
     fontSize: 16,
-    color: '#555555',
-  },
-  severityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  severityText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  detailSection: {
-    marginTop: 10,
-  },
-  detailSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 8,
-  },
-  detailDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#555555',
-  },
-  closeModalButton: {
-    backgroundColor: '#0066CC',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  closeModalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    fontStyle: 'italic',
+    color: '#e91e63',
   },
 });

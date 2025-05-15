@@ -1,10 +1,18 @@
-import { Image, StyleSheet, Text, TextInput, View, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import React, { useState } from 'react';
-import { colors } from '../utils/colors';
-import { FIREBASE_AUTH } from '../../FirebaseConfig';
+import { StackNavigationProp } from '@react-navigation/stack';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import colors from '../../assets/utils/colors';
+import { FIREBASE_AUTH } from '../../FirebaseConfig';
 
-const SignupScreen = ({ navigation }) => {
+type RootStackParamList = {
+  Login: undefined;
+  Signup: undefined;
+};
+
+type SignupScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Signup'>;
+
+const SignupScreen = ({ navigation }: { navigation: SignupScreenNavigationProp }) => {
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('');
@@ -25,8 +33,14 @@ const SignupScreen = ({ navigation }) => {
       await createUserWithEmailAndPassword(auth, email, password);
       Alert.alert("Success", "Account created! Please check your email.");
       navigation.navigate('Login');
-    } catch (error) {
-      Alert.alert("Sign Up Failed", error.message);
+    } catch (error: any) {
+      let errorMessage = error.message;
+      if (error.code === 'auth/invalid-email') {
+        errorMessage = 'The email address is not valid.';
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password should be at least 6 characters.';
+      }
+      Alert.alert("Sign Up Failed", errorMessage);
     } finally {
       setLoading(false);
     }
@@ -34,7 +48,7 @@ const SignupScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Image source={require("../assets/images/logo.png")} style={styles.bannerImage} />
+      <Image source={require("../../assets/images/logo.png")} style={styles.bannerImage} />
       <View style={styles.formContainer}>
         <Text style={styles.title}>Sign Up</Text>
         <TextInput placeholder="NAME" placeholderTextColor={colors.secondary} style={styles.input} value={name} onChangeText={setName} />
